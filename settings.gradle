@@ -1,0 +1,3 @@
+include ':jni_json'
+//include ':app'
+rootProject.name = "TestJNI"
