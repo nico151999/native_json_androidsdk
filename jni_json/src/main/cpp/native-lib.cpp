@@ -1,5 +1,4 @@
 #include <jni.h>
-#include <android/log.h>
 #include <string>
 
 #include "zzzjson.h"
@@ -21,7 +20,6 @@ void jsonToString(jobject srco, JNIEnv* env, Value* desv,
             if (ArrayAddFast(desv, v) != True) return;
         }
     } else if (env->IsInstanceOf(srco, mclazz)) {
-        __android_log_write(ANDROID_LOG_DEBUG, "Cooler Scheiss", "Is ne Map");
         SetObj(desv);
         jobject oset = env->CallObjectMethod(srco, mentryset);
         jobject oiterator = env->CallObjectMethod(oset, miteratorset);
