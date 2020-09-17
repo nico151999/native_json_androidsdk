@@ -5,12 +5,18 @@
 #include "rapidjson/writer.h"
 #include "rapidjson/stringbuffer.h"
 
+#include <android/log.h>
+
+#define APPNAME "MyApp"
+
 rapidjson::Value jobjecttojson(jobject *srco, JNIEnv *env, rapidjson::Document *doc, jclass *lclazz,
                                jclass *mclazz, jclass *iclazz, jclass *dclazz, jclass *sclazz,
-                               jclass *bclazz, jmethodID *mbooleanvalue, jmethodID *mdoublevalue,
+                               jclass *bclazz, jclass* loclazz, jclass* fclazz,
+                               jmethodID *mbooleanvalue, jmethodID *mdoublevalue,
                                jmethodID *mgetkey, jmethodID *mgetvalue, jmethodID *miteratorset,
                                jmethodID *miteratorlist, jmethodID *mentryset, jmethodID *mhasnext,
-                               jmethodID *mnext, jmethodID *mstringlength, jmethodID *mintvalue) {
+                               jmethodID *mnext, jmethodID *mstringlength, jmethodID *mintvalue,
+                               jmethodID* mstrtostr, jmethodID* mlongvalue, jmethodID* mfloatvalue) {
     rapidjson::Value v;
     if (env->IsInstanceOf(*srco, *lclazz)) {
         v.SetArray();
@@ -19,8 +25,10 @@ rapidjson::Value jobjecttojson(jobject *srco, JNIEnv *env, rapidjson::Document *
             jobject oentry = env->CallObjectMethod(oiterator, *mnext);
             v.PushBack(
                     jobjecttojson(&oentry, env, doc, lclazz, mclazz, iclazz, dclazz, sclazz, bclazz,
+                                  loclazz, fclazz,
                                   mbooleanvalue, mdoublevalue, mgetkey, mgetvalue, miteratorset,
-                                  miteratorlist, mentryset, mhasnext, mnext, mstringlength, mintvalue),
+                                  miteratorlist, mentryset, mhasnext, mnext, mstringlength, mintvalue,
+                                  mstrtostr, mlongvalue, mfloatvalue),
                     doc->GetAllocator());
         }
     } else if (env->IsInstanceOf(*srco, *mclazz)) {
@@ -29,14 +37,18 @@ rapidjson::Value jobjecttojson(jobject *srco, JNIEnv *env, rapidjson::Document *
         jobject oiterator = env->CallObjectMethod(oset, *miteratorset);
         while (env->CallBooleanMethod(oiterator, *mhasnext)) {
             jobject oentry = env->CallObjectMethod(oiterator, *mnext);
-            env->CallObjectMethod(oentry, *mgetkey);
-            env->CallObjectMethod(oentry, *mgetvalue);
+            jstring key = (jstring) env->CallObjectMethod(oentry, *mgetkey);
+            jobject val = env->CallObjectMethod(oentry, *mgetvalue);
             v.AddMember(
-                    rapidjson::Value(*env->GetStringUTFChars(
-                            (jstring) env->CallObjectMethod(oentry, *mgetkey), nullptr)),
-                    jobjecttojson(&oentry, env, doc, lclazz, mclazz, iclazz, dclazz, sclazz, bclazz,
+                    rapidjson::StringRef(
+                            env->GetStringUTFChars(key, nullptr),
+                            env->CallIntMethod(key, *mstringlength, nullptr)
+                    ),
+                    jobjecttojson(&val, env, doc, lclazz, mclazz, iclazz, dclazz, sclazz, bclazz,
+                                  loclazz, fclazz,
                                   mbooleanvalue, mdoublevalue, mgetkey, mgetvalue, miteratorset,
-                                  miteratorlist, mentryset, mhasnext, mnext, mstringlength, mintvalue),
+                                  miteratorlist, mentryset, mhasnext, mnext, mstringlength, mintvalue,
+                                  mstrtostr, mlongvalue, mfloatvalue),
                     doc->GetAllocator()
             );
         }
@@ -44,13 +56,23 @@ rapidjson::Value jobjecttojson(jobject *srco, JNIEnv *env, rapidjson::Document *
         v.SetBool(env->CallBooleanMethod(*srco, *mbooleanvalue));
     } else if (env->IsInstanceOf(*srco, *sclazz)) {
         v.SetString(
-                env->GetStringUTFChars((jstring) srco, nullptr),
+                env->GetStringUTFChars(
+                        (jstring)env->CallObjectMethod(*srco, *mstrtostr),
+                        nullptr),
                 env->CallIntMethod(*srco, *mstringlength, nullptr));
     } else if (env->IsInstanceOf(*srco, *iclazz)) {
         v.SetInt(env->CallIntMethod(*srco, *mintvalue, nullptr));
+    } else if (env->IsInstanceOf(*srco, *loclazz)) {
+        v.SetInt64(env->CallLongMethod(*srco, *mlongvalue, nullptr));
+    } else if (env->IsInstanceOf(*srco, *fclazz)) {
+        v.SetFloat(env->CallFloatMethod(*srco, *mfloatvalue, nullptr));
     } else if (env->IsInstanceOf(*srco, *dclazz)) {
         v.SetDouble(env->CallDoubleMethod(*srco, *mdoublevalue, nullptr));
-    } // todo: was passiert wenn einer davon null ist?
+    } else {
+        env->ThrowNew(
+                env->FindClass("de/nico/jni_json/NativeJSONException"),
+                "The passed object contains at least one incompatible data type");
+    }
     return v;
 }
 
@@ -195,6 +217,8 @@ Java_de_nico_jni_1json_NativeJSON_encode(JNIEnv *env, jclass clazz, jobject json
     jclass dclazz = env->FindClass("java/lang/Double");
     jclass sclazz = env->FindClass("java/lang/String");
     jclass bclazz = env->FindClass("java/lang/Boolean");
+    jclass loclazz = env->FindClass("java/lang/Long");
+    jclass fclazz = env->FindClass("java/lang/Float");
     jmethodID mbooleanvalue = env->GetMethodID(bclazz, "booleanValue", "()Z");
     jmethodID mdoublevalue = env->GetMethodID(dclazz, "doubleValue", "()D");
     jmethodID mintvalue = env->GetMethodID(iclazz, "intValue", "()I");
@@ -206,13 +230,17 @@ Java_de_nico_jni_1json_NativeJSON_encode(JNIEnv *env, jclass clazz, jobject json
     jmethodID mhasnext = env->GetMethodID(itclazz, "hasNext", "()Z");
     jmethodID mnext = env->GetMethodID(itclazz, "next", "()Ljava/lang/Object;");
     jmethodID mstringlength = env->GetMethodID(sclazz, "length", "()I");
+    jmethodID mstrtostr = env->GetMethodID(sclazz, "toString", "()Ljava/lang/String;");
+    jmethodID mlongvalue = env->GetMethodID(loclazz, "longValue", "()J");
+    jmethodID mfloatvalue = env->GetMethodID(fclazz, "floatValue", "()F");
 
     rapidjson::Document d;
     rapidjson::Value v = jobjecttojson(&json, env, &d, &lclazz, &mclazz, &iclazz, &dclazz,
-                                       &sclazz, &bclazz, &mbooleanvalue,
+                                       &sclazz, &bclazz, &loclazz, &fclazz, &mbooleanvalue,
                                        &mdoublevalue, &mgetkey, &mgetvalue,
                                        &miteratorset, &miteratorlist, &mentryset,
-                                       &mhasnext, &mnext, &mstringlength, &mintvalue);
+                                       &mhasnext, &mnext, &mstringlength, &mintvalue, &mstrtostr,
+                                       &mlongvalue, &mfloatvalue);
     rapidjson::StringBuffer buffer;
     rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
     v.Accept(writer);
