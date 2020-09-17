@@ -1,139 +1,145 @@
 #include <jni.h>
 #include <string>
 
-#include "zzzjson.h"
+#include "rapidjson/document.h"
+#include "rapidjson/writer.h"
+#include "rapidjson/stringbuffer.h"
 
-void jsonToString(jobject srco, JNIEnv* env, Value* desv,
-        jclass lclazz, jclass mclazz, jclass iclazz, jclass dclazz, jclass sclazz, jclass bclazz,
-        jmethodID mbooleanvalue, jmethodID mtostringdouble, jmethodID mtostringint, jmethodID mgetkey,
-        jmethodID mgetvalue, jmethodID miteratorset, jmethodID miteratorlist, jmethodID mentryset,
-        jmethodID mhasnext, jmethodID mnext) {
-    if (env->IsInstanceOf(srco, lclazz)) {
-        SetArray(desv);
-        jobject oiterator = env->CallObjectMethod(srco, miteratorlist);
-        while (env->CallBooleanMethod(oiterator, mhasnext)) {
-            jobject oentry = env->CallObjectMethod(oiterator, mnext);
-            Value *v = NewValue(desv->A);
-            jsonToString(oentry, env, v, lclazz, mclazz, iclazz, dclazz, sclazz, bclazz, mbooleanvalue,
-                         mtostringdouble, mtostringint, mgetkey, mgetvalue, miteratorset, miteratorlist,
-                         mentryset, mhasnext, mnext);
-            if (ArrayAddFast(desv, v) != True) return;
+rapidjson::Value jobjecttojson(jobject *srco, JNIEnv *env, rapidjson::Document *doc, jclass *lclazz,
+                               jclass *mclazz, jclass *iclazz, jclass *dclazz, jclass *sclazz,
+                               jclass *bclazz, jmethodID *mbooleanvalue, jmethodID *mdoublevalue,
+                               jmethodID *mgetkey, jmethodID *mgetvalue, jmethodID *miteratorset,
+                               jmethodID *miteratorlist, jmethodID *mentryset, jmethodID *mhasnext,
+                               jmethodID *mnext, jmethodID *mstringlength, jmethodID *mintvalue) {
+    rapidjson::Value v;
+    if (env->IsInstanceOf(*srco, *lclazz)) {
+        v.SetArray();
+        jobject oiterator = env->CallObjectMethod(*srco, *miteratorlist);
+        while (env->CallBooleanMethod(oiterator, *mhasnext)) {
+            jobject oentry = env->CallObjectMethod(oiterator, *mnext);
+            v.PushBack(
+                    jobjecttojson(&oentry, env, doc, lclazz, mclazz, iclazz, dclazz, sclazz, bclazz,
+                                  mbooleanvalue, mdoublevalue, mgetkey, mgetvalue, miteratorset,
+                                  miteratorlist, mentryset, mhasnext, mnext, mstringlength, mintvalue),
+                    doc->GetAllocator());
         }
-    } else if (env->IsInstanceOf(srco, mclazz)) {
-        SetObj(desv);
-        jobject oset = env->CallObjectMethod(srco, mentryset);
-        jobject oiterator = env->CallObjectMethod(oset, miteratorset);
-        while (env->CallBooleanMethod(oiterator, mhasnext)) {
-            jobject oentry = env->CallObjectMethod(oiterator, mnext);
-            Value *v = NewValue(desv->A);
-            SetKeyFast(
-                    v,
-                    env->GetStringUTFChars((jstring) env->CallObjectMethod(oentry, mgetkey), nullptr));
-            jsonToString(env->CallObjectMethod(oentry, mgetvalue), env, v, lclazz, mclazz, iclazz,
-                    dclazz, sclazz, bclazz, mbooleanvalue, mtostringdouble, mtostringint, mgetkey,
-                    mgetvalue, miteratorset, miteratorlist, mentryset, mhasnext, mnext);
-            if (ObjAddFast(desv, v) != True) return;
+    } else if (env->IsInstanceOf(*srco, *mclazz)) {
+        v.SetObject();
+        jobject oset = env->CallObjectMethod(*srco, *mentryset);
+        jobject oiterator = env->CallObjectMethod(oset, *miteratorset);
+        while (env->CallBooleanMethod(oiterator, *mhasnext)) {
+            jobject oentry = env->CallObjectMethod(oiterator, *mnext);
+            env->CallObjectMethod(oentry, *mgetkey);
+            env->CallObjectMethod(oentry, *mgetvalue);
+            v.AddMember(
+                    rapidjson::Value(*env->GetStringUTFChars(
+                            (jstring) env->CallObjectMethod(oentry, *mgetkey), nullptr)),
+                    jobjecttojson(&oentry, env, doc, lclazz, mclazz, iclazz, dclazz, sclazz, bclazz,
+                                  mbooleanvalue, mdoublevalue, mgetkey, mgetvalue, miteratorset,
+                                  miteratorlist, mentryset, mhasnext, mnext, mstringlength, mintvalue),
+                    doc->GetAllocator()
+            );
         }
-    } else if (env->IsInstanceOf(srco, bclazz)) {
-        const zzz_BOOL *b = env->CallBooleanMethod(srco, mbooleanvalue) ? &zzz_True : &zzz_False;
-        if (b == nullptr)
-            return;
-        SetBool(desv, *b);
-    } else if (env->IsInstanceOf(srco, sclazz)) {
-        const char *str = env->GetStringUTFChars((jstring) srco, nullptr);
-        if (str == nullptr)
-            return;
-        if (SetStrFast(desv, str) != True)
-            return;
-    } else if (env->IsInstanceOf(srco, iclazz)) {
-        const char *str = env->GetStringUTFChars((jstring) env->CallObjectMethod(srco, mtostringint), nullptr);
-        if (str == nullptr)
-            return;
-        if (SetNumStrFast(desv, str) != True)
-            return;
-    } else if (env->IsInstanceOf(srco, dclazz)) {
-        const char *str = env->GetStringUTFChars((jstring) env->CallObjectMethod(srco, mtostringdouble), nullptr);
-        if (str == nullptr)
-            return;
-        if (SetNumStrFast(desv, str) != True)
-            return;
-    }
+    } else if (env->IsInstanceOf(*srco, *bclazz)) {
+        v.SetBool(env->CallBooleanMethod(*srco, *mbooleanvalue));
+    } else if (env->IsInstanceOf(*srco, *sclazz)) {
+        v.SetString(
+                env->GetStringUTFChars((jstring) srco, nullptr),
+                env->CallIntMethod(*srco, *mstringlength, nullptr));
+    } else if (env->IsInstanceOf(*srco, *iclazz)) {
+        v.SetInt(env->CallIntMethod(*srco, *mintvalue, nullptr));
+    } else if (env->IsInstanceOf(*srco, *dclazz)) {
+        v.SetDouble(env->CallDoubleMethod(*srco, *mdoublevalue, nullptr));
+    } // todo: was passiert wenn einer davon null ist?
+    return v;
 }
 
-jobject stringToJSON(Value *srcv, JNIEnv *env,
-        jclass mclazz, jmethodID minit, jmethodID put,
-        jclass lclazz, jmethodID linit, jmethodID add,
-        jclass bclazz, jmethodID bvalue,
-        jclass sclazz, jmethodID sinit,
-        jclass iclazz, jmethodID ivalue,
-        jclass dclazz, jmethodID dvalue) {
-    const JSONType *t = Type(srcv);
-    if (t == nullptr) {
-        return nullptr;
-    }
-    switch (*t)
-    {
-        case JSONTYPEARRAY:
-        {
-            jobject list = env->NewObject(lclazz, linit);
-            Value *next = Begin(srcv);
-            while (next != nullptr) {
+jobject jstringtojobject(rapidjson::Value *srcv, JNIEnv *env,
+                         jclass *mclazz, jmethodID *minit, jmethodID *put,
+                         jclass *lclazz, jmethodID *linit, jmethodID *add,
+                         jclass *bclazz, jmethodID *bvalue,
+                         jclass *sclazz, jmethodID *sinit,
+                         jclass *iclazz, jmethodID *ivalue,
+                         jclass *dclazz, jmethodID *dvalue,
+                         jclass *loclazz, jmethodID *lovalue,
+                         jclass *fclazz, jmethodID *fvalue) {
+    rapidjson::Type t = srcv->GetType();
+    switch (t) {
+        case rapidjson::kArrayType: {
+            jobject list = env->NewObject(*lclazz, *linit);
+            for (auto &v : srcv->GetArray()) {
                 env->CallBooleanMethod(
                         list,
-                        add,
-                        stringToJSON(
-                                next, env,
+                        *add,
+                        jstringtojobject(
+                                &v, env,
                                 mclazz, minit, put,
                                 lclazz, linit, add,
                                 bclazz, bvalue,
                                 sclazz, sinit,
                                 iclazz, ivalue,
-                                dclazz, dvalue));
-                next = Next(next);
+                                dclazz, dvalue,
+                                loclazz, lovalue,
+                                fclazz, fvalue));
             }
             return list;
         }
-        case JSONTYPEOBJECT:
-        {
-            jobject map = env->NewObject(mclazz, minit);
-            Value *next = Begin(srcv);
-            while (next != nullptr) {
+        case rapidjson::kObjectType: {
+            jobject map = env->NewObject(*mclazz, *minit);
+            for (auto &v : srcv->GetObject()) {
                 env->CallObjectMethod(
                         map,
-                        put,
-                        env->NewStringUTF(GetKey(next)),
-                        stringToJSON(
-                                next, env,
+                        *put,
+                        env->NewStringUTF(v.name.GetString()),
+                        jstringtojobject(
+                                &v.value, env,
                                 mclazz, minit, put,
                                 lclazz, linit, add,
                                 bclazz, bvalue,
                                 sclazz, sinit,
                                 iclazz, ivalue,
-                                dclazz, dvalue));
-                next = Next(next);
+                                dclazz, dvalue,
+                                loclazz, lovalue,
+                                fclazz, fvalue));
             }
             return map;
         }
-        case JSONTYPEBOOL:
-        {
-            return env->CallStaticObjectMethod(bclazz, bvalue, *GetBool(srcv));
+        case rapidjson::kTrueType: {
+            return env->CallStaticObjectMethod(*bclazz, *bvalue, true);
         }
-        case JSONTYPENULL:
-        {
+        case rapidjson::kFalseType: {
+            return env->CallStaticObjectMethod(*bclazz, *bvalue, false);
+        }
+        case rapidjson::kNullType: {
             return nullptr;
         }
-
-        case JSONTYPESTRING:
-        {
-            return env->NewObject(sclazz, sinit, env->NewStringUTF(GetStr(srcv)));
+        case rapidjson::kStringType: {
+            return env->NewObject(*sclazz, *sinit, env->NewStringUTF(srcv->GetString()));
         }
-        case JSONTYPENUMBER:
-        {
-            const char* number = GetNumStr(srcv);
-            if (strchr(number, '.') == nullptr) {
-                return env->CallStaticObjectMethod(iclazz, ivalue, atoi(number));
-            } else {
-                return env->CallStaticObjectMethod(dclazz, dvalue, atof(number));
+        case rapidjson::kNumberType: {
+            if (srcv->IsInt()) {
+                return env->CallStaticObjectMethod(*iclazz, *ivalue, srcv->GetInt());
+            }
+            if (srcv->IsUint()) {
+                return env->CallStaticObjectMethod(*iclazz, *ivalue, srcv->GetUint());
+            }
+            if (srcv->IsInt64()) {
+                return env->CallStaticObjectMethod(*loclazz, *lovalue, srcv->GetInt64());
+            }
+            if (srcv->IsUint64()) {
+                return env->CallStaticObjectMethod(*loclazz, *lovalue, srcv->GetUint64());
+            }
+            if (srcv->IsFloat()) {
+                return env->CallStaticObjectMethod(*fclazz, *fvalue, srcv->GetFloat());
+            }
+            if (srcv->IsLosslessFloat()) {
+                return env->CallStaticObjectMethod(*fclazz, *fvalue, srcv->GetFloat());
+            }
+            if (srcv->IsDouble()) {
+                return env->CallStaticObjectMethod(*dclazz, *dvalue, srcv->GetDouble());
+            }
+            if (srcv->IsLosslessDouble()) {
+                return env->CallStaticObjectMethod(*dclazz, *dvalue, srcv->GetDouble());
             }
         }
     }
@@ -145,7 +151,7 @@ JNIEXPORT jobject JNICALL
 Java_de_nico_jni_1json_NativeJSON_decode(JNIEnv *env, jclass clazz, jstring json) {
     jclass mclazz = env->FindClass("java/util/HashMap");
     jmethodID minit = env->GetMethodID(mclazz, "<init>", "()V");
-    jmethodID put = env->GetMethodID(mclazz, "put", "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+    jmethodID put = env->GetMethodID(mclazz, "put","(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
 
     jclass lclazz = env->FindClass("java/util/ArrayList");
     jmethodID linit = env->GetMethodID(lclazz, "<init>", "()V");
@@ -160,20 +166,21 @@ Java_de_nico_jni_1json_NativeJSON_decode(JNIEnv *env, jclass clazz, jstring json
     jclass iclazz = env->FindClass("java/lang/Integer");
     jmethodID ivalue = env->GetStaticMethodID(iclazz, "valueOf", "(I)Ljava/lang/Integer;");
 
+    jclass loclazz = env->FindClass("java/lang/Long");
+    jmethodID lovalue = env->GetStaticMethodID(loclazz, "valueOf", "(J)Ljava/lang/Long;");
+
     jclass dclazz = env->FindClass("java/lang/Double");
     jmethodID dvalue = env->GetStaticMethodID(dclazz, "valueOf", "(D)Ljava/lang/Double;");
 
-    Allocator* A = NewAllocator();
-    Value* src_v = NewValue(A);
-    const char* jsonString = env->GetStringUTFChars(json, nullptr);
-    BOOL ret = ParseFast(src_v, jsonString);
-    if (ret != True) {
-        return nullptr;
-    }
-    jobject obj = stringToJSON(src_v, env, mclazz, minit, put, lclazz, linit, add, bclazz, bvalue, sclazz, sinit, dclazz, dvalue, iclazz, ivalue);
-    ReleaseAllocator(A);
+    jclass fclazz = env->FindClass("java/lang/Float");
+    jmethodID fvalue = env->GetStaticMethodID(fclazz, "valueOf", "(F)Ljava/lang/Float;");
 
-    return obj;
+    const char *jsonString = env->GetStringUTFChars(json, nullptr);
+    rapidjson::Document d;
+    d.Parse(jsonString);
+    return jstringtojobject(&d, env, &mclazz, &minit, &put, &lclazz, &linit, &add, &bclazz, &bvalue,
+                                   &sclazz, &sinit, &dclazz, &dvalue, &iclazz, &ivalue, &loclazz, &lovalue,
+                                   &fclazz, &fvalue);
 }
 
 extern "C"
@@ -189,21 +196,25 @@ Java_de_nico_jni_1json_NativeJSON_encode(JNIEnv *env, jclass clazz, jobject json
     jclass sclazz = env->FindClass("java/lang/String");
     jclass bclazz = env->FindClass("java/lang/Boolean");
     jmethodID mbooleanvalue = env->GetMethodID(bclazz, "booleanValue", "()Z");
-    jmethodID mtostringdouble = env->GetMethodID(dclazz, "toString", "()Ljava/lang/String;");
-    jmethodID mtostringint = env->GetMethodID(iclazz, "toString", "()Ljava/lang/String;");
+    jmethodID mdoublevalue = env->GetMethodID(dclazz, "doubleValue", "()D");
+    jmethodID mintvalue = env->GetMethodID(iclazz, "intValue", "()I");
     jmethodID mgetkey = env->GetMethodID(eclazz, "getKey", "()Ljava/lang/Object;");
     jmethodID mgetvalue = env->GetMethodID(eclazz, "getValue", "()Ljava/lang/Object;");
     jmethodID miteratorset = env->GetMethodID(seclazz, "iterator", "()Ljava/util/Iterator;");
     jmethodID miteratorlist = env->GetMethodID(lclazz, "iterator", "()Ljava/util/Iterator;");
-    jmethodID mentryset = env->GetMethodID(mclazz, "entrySet","()Ljava/util/Set;");
+    jmethodID mentryset = env->GetMethodID(mclazz, "entrySet", "()Ljava/util/Set;");
     jmethodID mhasnext = env->GetMethodID(itclazz, "hasNext", "()Z");
     jmethodID mnext = env->GetMethodID(itclazz, "next", "()Ljava/lang/Object;");
+    jmethodID mstringlength = env->GetMethodID(sclazz, "length", "()I");
 
-    Allocator *A = NewAllocator();
-    Value *des_v = NewValue(A);
-    jsonToString(json, env, des_v, lclazz, mclazz, iclazz, dclazz, sclazz, bclazz, mbooleanvalue,
-            mtostringdouble, mtostringint, mgetkey, mgetvalue, miteratorset, miteratorlist, mentryset,
-            mhasnext, mnext);
-    ReleaseAllocator(A);
-    return env->NewStringUTF(Stringify(des_v));
+    rapidjson::Document d;
+    rapidjson::Value v = jobjecttojson(&json, env, &d, &lclazz, &mclazz, &iclazz, &dclazz,
+                                       &sclazz, &bclazz, &mbooleanvalue,
+                                       &mdoublevalue, &mgetkey, &mgetvalue,
+                                       &miteratorset, &miteratorlist, &mentryset,
+                                       &mhasnext, &mnext, &mstringlength, &mintvalue);
+    rapidjson::StringBuffer buffer;
+    rapidjson::Writer<rapidjson::StringBuffer> writer(buffer);
+    v.Accept(writer);
+    return env->NewStringUTF(buffer.GetString());
 }
